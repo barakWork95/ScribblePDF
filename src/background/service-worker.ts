@@ -16,6 +16,7 @@
 import { DEFAULT_PREFS } from '@/core/types';
 import type { Preferences } from '@/core/types';
 import type { ExitEditorResponse, Message } from '@/core/messages';
+import { newToken, putHandoff, sweepHandoffs } from '@/core/handoff';
 
 const REDIRECT_RULE_ID = 1;
 
@@ -48,13 +49,67 @@ const LEGACY_REVOKE_KEY = 'revokedLegacyBroadHosts';
  */
 const BYPASS_KEY = 'redirectBypassTabs';
 
-const viewerUrl = (fileUrl?: string): string => {
+/**
+ * Build a viewer URL.
+ *
+ *   file   remote http(s) document, fetched by the viewer itself
+ *   token  local document, bytes already staged in IndexedDB (see handoff.ts)
+ *   reason why we could not open anything, so the viewer can explain itself
+ */
+const viewerUrl = (params: { file?: string; token?: string; reason?: string } = {}): string => {
   const base = chrome.runtime.getURL('viewer/viewer.html');
-  return fileUrl ? `${base}?file=${encodeURIComponent(fileUrl)}` : base;
+  if (params.token) return `${base}?token=${params.token}`;
+  if (params.reason) return `${base}?reason=${params.reason}`;
+  // `file` stays last and unencoded-friendly: the redirect rule splices raw URLs
+  // into this same slot, and main.ts sniffs which producer wrote it.
+  return params.file ? `${base}?file=${encodeURIComponent(params.file)}` : base;
 };
 
-const isPdfUrl = (url: string | undefined): boolean =>
-  !!url && /\.pdf(\?|#|$)/i.test(url) && /^(https?|file):/i.test(url);
+const isPdfPath = (url: string): boolean => /\.pdf(\?|#|$)/i.test(url);
+const isRemotePdf = (url: string | undefined): boolean =>
+  !!url && isPdfPath(url) && /^https?:/i.test(url);
+const isLocalPdf = (url: string | undefined): boolean =>
+  !!url && isPdfPath(url) && /^file:/i.test(url);
+
+function filenameFromUrl(url: string): string {
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+    return name || 'document.pdf';
+  } catch {
+    return 'document.pdf';
+  }
+}
+
+/**
+ * Read a local PDF and stage it for the viewer.
+ *
+ * The worker does the reading because a document cannot: Chrome blocks
+ * `file://` subresource loads from any document, permissions notwithstanding.
+ * This still requires the user to have switched on "Allow access to file URLs"
+ * for the extension, which is off by default and cannot be requested
+ * programmatically — so a failure here is expected, not exceptional, and the
+ * viewer is told to explain the toggle rather than showing a raw error.
+ */
+async function openLocalPdf(tabId: number, url: string): Promise<void> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const bytes = await res.arrayBuffer();
+
+    const token = newToken();
+    await putHandoff({
+      token,
+      name: filenameFromUrl(url),
+      sourceUrl: url,
+      bytes,
+      createdAt: Date.now(),
+    });
+    await chrome.tabs.update(tabId, { url: viewerUrl({ token }) });
+  } catch (err) {
+    console.warn('[scribblepdf] could not read local file', err);
+    await chrome.tabs.update(tabId, { url: viewerUrl({ reason: 'file-access' }) });
+  }
+}
 
 // ------------------------------------------------------------ bypass state
 
@@ -173,14 +228,38 @@ async function revokeLegacyBroadHostGrants(): Promise<void> {
   }
 }
 
+/**
+ * Run an async listener body without leaking an unhandled rejection.
+ *
+ * chrome://extensions surfaces uncaught exceptions, unhandled promise
+ * rejections and console.error as "Errors" on the extension card. Every one of
+ * the conditions handled here is recoverable (a tab closed mid-flight, a rule
+ * update racing a permission change), so they are logged with console.warn —
+ * which is not collected — rather than being allowed to surface as defects.
+ */
+function guard(label: string, run: () => Promise<void>): void {
+  void run().catch((err) => {
+    console.warn(`[scribblepdf] ${label} failed`, err);
+  });
+}
+
 // ----------------------------------------------------------------- listeners
 
 chrome.action.onClicked.addListener((tab) => {
-  void (async () => {
-    if (typeof tab.id !== 'number') return;
-    if (isPdfUrl(tab.url)) {
+  guard('action click', async () => {
+    if (typeof tab.id !== 'number') {
+      // Can happen for a devtools or app window; nothing to open into.
+      console.warn('[scribblepdf] action clicked on a tab with no id; ignoring');
+      return;
+    }
+
+    if (isRemotePdf(tab.url)) {
       // Replace the current tab so the back button still returns to the source.
-      await chrome.tabs.update(tab.id, { url: viewerUrl(tab.url) });
+      await chrome.tabs.update(tab.id, { url: viewerUrl({ file: tab.url }) });
+      return;
+    }
+    if (isLocalPdf(tab.url)) {
+      await openLocalPdf(tab.id, tab.url!);
       return;
     }
     if (!tab.url) {
@@ -190,7 +269,7 @@ chrome.action.onClicked.addListener((tab) => {
       console.warn('[scribblepdf] tab.url unavailable on action click; opening picker');
     }
     await chrome.tabs.create({ url: viewerUrl() });
-  })();
+  });
 });
 
 chrome.runtime.onMessage.addListener(
@@ -214,49 +293,57 @@ chrome.runtime.onMessage.addListener(
         await chrome.tabs.update(tabId, { url: message.url });
         sendResponse({ ok: true });
       } catch (err) {
+        // The viewer has its own fallback; never let this reject.
+        console.warn('[scribblepdf] exit navigation failed', err);
         sendResponse({ ok: false, reason: String(err) });
       }
-    })();
+    })().catch((err) => {
+      console.warn('[scribblepdf] exit handler failed', err);
+      sendResponse({ ok: false, reason: String(err) });
+    });
 
     return true; // response is asynchronous
   },
 );
 
+async function clearBypass(tabId: number): Promise<void> {
+  const bypass = await getBypassTabs();
+  if (!bypass.includes(tabId)) return;
+  await setBypassTabs(bypass.filter((id) => id !== tabId));
+  await rebuildRedirectRule();
+}
+
 /** Clear a tab's bypass once its navigation has settled. */
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status !== 'complete') return;
-  void (async () => {
-    const bypass = await getBypassTabs();
-    if (!bypass.includes(tabId)) return;
-    await setBypassTabs(bypass.filter((id) => id !== tabId));
-    await rebuildRedirectRule();
-  })();
+  guard('bypass clear', () => clearBypass(tabId));
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void (async () => {
-    const bypass = await getBypassTabs();
-    if (!bypass.includes(tabId)) return;
-    await setBypassTabs(bypass.filter((id) => id !== tabId));
-    await rebuildRedirectRule();
-  })();
+  guard('bypass clear on tab close', () => clearBypass(tabId));
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  void (async () => {
+  guard('install setup', async () => {
     await revokeLegacyBroadHostGrants();
     await rebuildRedirectRule();
-  })();
+  });
 });
-chrome.runtime.onStartup.addListener(() => void rebuildRedirectRule());
+chrome.runtime.onStartup.addListener(() => {
+  guard('startup setup', async () => {
+    // Clear any handoff orphaned by a tab that closed before the viewer ran.
+    await sweepHandoffs().catch(() => undefined);
+    await rebuildRedirectRule();
+  });
+});
 
 // A newly granted site may need a redirect rule; a revoked one must lose it.
-chrome.permissions.onAdded.addListener(() => void rebuildRedirectRule());
-chrome.permissions.onRemoved.addListener(() => void rebuildRedirectRule());
+chrome.permissions.onAdded.addListener(() => guard('rule rebuild', rebuildRedirectRule));
+chrome.permissions.onRemoved.addListener(() => guard('rule rebuild', rebuildRedirectRule));
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.prefs) return;
   const next = changes.prefs.newValue as Preferences | undefined;
   const prev = changes.prefs.oldValue as Preferences | undefined;
-  if (next?.autoOpen !== prev?.autoOpen) void rebuildRedirectRule();
+  if (next?.autoOpen !== prev?.autoOpen) guard('rule rebuild', rebuildRedirectRule);
 });

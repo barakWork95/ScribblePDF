@@ -120,6 +120,38 @@ Redirect rules follow from what was granted: they are rebuilt from
 are **session-scoped, not dynamic**, because `excludedTabIds` is session-only —
 and that is what makes "Exit editor" possible.
 
+### Local files are read by the worker and handed over via IndexedDB
+`viewer.html?file=file:///…` cannot work. Chrome blocks `file://` *subresource*
+loads from any document ("Not allowed to load local resource"), and that
+renderer check runs **before** extension permissions are consulted — so no grant
+fixes it. A service worker is not a document, so it reads the file and stages
+the bytes.
+
+Transport is IndexedDB (`core/handoff.ts`), because the obvious routes are all
+wrong: `chrome.runtime.sendMessage` JSON-serialises (an `ArrayBuffer` arrives as
+`{}`), `URL.createObjectURL` does not exist in a service worker, and
+`chrome.storage.local` is 10 MB of JSON. Records are **single-use** —
+`takeHandoff` reads and deletes in one transaction — with a 5-minute TTL and a
+startup sweep for tabs closed before the viewer ran.
+
+Routing: `?token=` local, `?file=` remote, `?reason=file-access` when the toggle
+is off. Note `file://` access **cannot be requested at runtime**;
+`host_permissions: ["file:///*"]` only makes the toggle available, and it is off
+by default and grants no site access.
+
+### Keeping the extensions card free of errors
+`chrome://extensions` collects uncaught exceptions, unhandled promise rejections
+and `console.error` — but **not** `console.warn`. So every recoverable condition
+(a tab closed mid-flight, a rule update racing a permission change, file access
+switched off) is warned, and `console.error` is reserved for genuine failures
+that should surface. Worker listeners run through `guard()` so an async body can
+never leak a rejection.
+
+The viewer refuses to `fetch()` or navigate to any non-http(s) URL. A document
+cannot load `file://`, and attempting it throws a `TypeError` that lands on the
+extension card — so `openUrl()` rejects other schemes up front rather than
+discovering it at the network layer.
+
 ### Exit editor goes through the service worker
 Setting `location.href` back to the PDF would be caught by our own redirect rule
 and bounce straight back into the editor. So the viewer sends `exitEditor` to
@@ -162,6 +194,7 @@ src/
     geometry.ts       view<->PDF conversion, basis, unit glyphs, colour
     text-style.ts     LINE_HEIGHT, MEASURED font metrics, CSS stacks (dependency-free)
     messages.ts       viewer <-> service worker message shapes
+    handoff.ts        single-use IndexedDB handoff for local (file://) PDFs
     bidi-layout.ts    UBA reordering + font-coverage run splitting (pure)
     store.ts          observable state, undo/redo, transient drag commits
     pdf-renderer.ts   pdf.js: lazy render, zoom, render-task lifecycle
@@ -284,8 +317,15 @@ node scripts/serve.mjs 5273
    would fight them. The definitive reset is to remove and re-add the unpacked
    extension.
 
-7. **`file://` PDFs** need the per-extension "Allow access to file URLs" toggle.
-   The viewer detects the failure and points at the file picker.
+7. **`file://` PDFs** are read by the service worker, never by the viewer — see
+   the handoff section in §2. They still need the per-extension "Allow access to
+   file URLs" toggle, which is off by default and cannot be requested
+   programmatically; when it is off the worker routes to
+   `?reason=file-access` and the viewer explains the toggle. Drag-and-drop and
+   "Choose PDF" need no permission at all and always work.
+
+   A handoff token is consumed on load, so **reloading a local-file tab will not
+   re-open it** — that is deliberate, so the bytes do not outlive the load.
 
 8. **Bundle weight:** the package is 6.4 MB, dominated by `vendor/cmaps`
    (1.6 MB) and `vendor/standard_fonts` (1.0 MB) — both only needed for CJK and

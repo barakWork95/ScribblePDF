@@ -27,6 +27,9 @@
     "declarativeNetRequestWithHostAccess",
     "activeTab"
   ],
+  "host_permissions": [
+    "file:///*"
+  ],
   "optional_host_permissions": [
     "http://*/*",
     "https://*/*"

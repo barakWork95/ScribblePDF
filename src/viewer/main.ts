@@ -15,6 +15,7 @@ import { loadPrefs, savePrefs } from '@/core/storage';
 import { clamp } from '@/core/geometry';
 import { warmUpFontMetrics } from '@/core/text-style';
 import type { ExitEditorRequest, ExitEditorResponse } from '@/core/messages';
+import { takeHandoff } from '@/core/handoff';
 
 /**
  * The exporter pulls in pdf-lib, fontkit and bidi-js — roughly two thirds of
@@ -73,12 +74,64 @@ async function main(): Promise<void> {
   // metrics come from a fallback font.
   await warmUpFontMetrics();
 
+  const params = new URLSearchParams(location.search);
+
+  // Local files arrive as a one-time IndexedDB token, never as a file:// URL:
+  // a document cannot load file:// subresources at all. See core/handoff.ts.
+  const token = params.get('token');
+  if (token) {
+    await openHandoff(token);
+    return;
+  }
+
+  if (params.get('reason') === 'file-access') {
+    showEmpty(
+      'To open PDFs stored on your computer, switch on “Allow access to file URLs” ' +
+        'for ScribblePDF in chrome://extensions. Or just choose the file below — ' +
+        'that works without any permission.',
+    );
+    return;
+  }
+
   const src = readSourceParam();
   if (!src) {
     showEmpty();
     return;
   }
   await openUrl(src);
+}
+
+/**
+ * Collect a local PDF staged by the service worker.
+ *
+ * The record is single-use — `takeHandoff` deletes it in the same transaction
+ * that reads it — so reloading this tab will not find it again. That is
+ * deliberate: the bytes should not outlive the load.
+ */
+async function openHandoff(token: string): Promise<void> {
+  setStatus('Loading PDF…');
+  let record;
+  try {
+    record = await takeHandoff(token);
+  } catch (err) {
+    console.error('[scribblepdf] handoff read failed', err);
+    showEmpty(`Could not read the staged file (${(err as Error).message}). Choose it below.`);
+    return;
+  }
+
+  if (!record) {
+    showEmpty(
+      'That local file is no longer staged — a file handed over this way is ' +
+        'read once and immediately discarded, so reloading this page cannot ' +
+        'recover it. Open it again from the toolbar icon, or choose it below.',
+    );
+    return;
+  }
+
+  sourceName = record.name;
+  sourceUrl = record.sourceUrl;
+  els.exit.hidden = !record.sourceUrl;
+  await openBytes(record.bytes);
 }
 
 /**
@@ -96,6 +149,23 @@ function originPattern(url: string): string | null {
 }
 
 async function openUrl(url: string): Promise<void> {
+  // NEVER fetch a non-http(s) URL from here. A document cannot load a file://
+  // subresource: Chrome rejects it with "Not allowed to load local resource"
+  // before extension permissions are consulted, and the resulting TypeError is
+  // reported as an extension error in chrome://extensions. Local files arrive
+  // through the worker's IndexedDB handoff (?token=) instead — this branch only
+  // catches stale or hand-edited ?file=file:// links.
+  if (!/^https?:/i.test(url)) {
+    sourceUrl = null;
+    els.exit.hidden = true;
+    showEmpty(
+      'Local files can’t be opened from this address. Open the PDF with the ' +
+        'ScribblePDF toolbar icon, or choose it below — both work without any ' +
+        'permission.',
+    );
+    return;
+  }
+
   sourceUrl = url;
   els.exit.hidden = false;
 
@@ -252,7 +322,13 @@ function bindExit(): void {
       } catch {
         /* no service worker (dev harness) — fall through */
       }
-      location.href = sourceUrl;
+      // The direct fallback only works for web URLs: a document cannot navigate
+      // itself to file://, and attempting it logs an extension error.
+      if (/^https?:/i.test(sourceUrl)) {
+        location.href = sourceUrl;
+      } else {
+        setStatus('Could not reopen the original file — close this tab to leave.', true);
+      }
     })();
   });
 }
@@ -415,6 +491,8 @@ if (__DEV__) {
   (window as unknown as Record<string, unknown>).__paDev = {
     store,
     renderer,
+    /** IndexedDB handoff, for exercising the local-file path without a worker. */
+    handoff: { take: takeHandoff, put: (r: never) => import('@/core/handoff').then((m) => m.putHandoff(r)) },
     /** Concatenated text layer of a page — proves text is real, not raster. */
     pageText: (i: number) => renderer.getPageText(i),
     /** Export and hand back base64, for byte-level inspection in tests. */

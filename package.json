@@ -1,8 +1,8 @@
 {
   "name": "scribblepdf",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
-  "description": "ScribblePDF \u2014 client-side Chrome MV3 extension for annotating and signing PDFs in-tab. Zero server, local-first.",
+  "description": "ScribblePDF — client-side Chrome MV3 extension for annotating and signing PDFs in-tab. Zero server, local-first.",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",

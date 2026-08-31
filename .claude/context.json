@@ -35,7 +35,12 @@
     "Font metrics are measured at runtime, never tabulated — the CSS stack resolves to different faces per OS. warmUpFontMetrics() must complete before anything calls baselineRatio.",
     "assets/*.svg is the icon source of truth; public/icons/*.png is generated. Never hand-edit the PNGs.",
     "A \"--\" sequence inside an XML comment makes an SVG fail to parse, silently when loaded via <img>. make-icons.mjs asserts against it.",
-    "Never hand-zip dist/. `npm run package` is the gate that stops dev artefacts and dev hooks reaching the store."
+    "Never hand-zip dist/. `npm run package` is the gate that stops dev artefacts and dev hooks reaching the store.",
+    "A document can never load a file:// subresource — the renderer blocks it before permissions are checked. Local files MUST be read by the service worker and handed over through IndexedDB (core/handoff.ts).",
+    "file:// access cannot be requested at runtime: chrome.permissions.request() does not grant it. Declaring host_permissions [\"file:///*\"] is what makes the \"Allow access to file URLs\" toggle available; the toggle is off by default and grants no site access.",
+    "Handoff records are single-use and short-lived. Never make them persistent — the PDF bytes must not outlive the load.",
+    "The viewer must never fetch or navigate to a non-http(s) URL. openUrl() refuses other schemes; local files come only through the ?token= handoff.",
+    "Worker listeners route through guard() and log recoverable conditions with console.warn — chrome://extensions collects console.error and unhandled rejections, not warnings. Do not use console.error for expected states."
   ],
   "entrypoints": {
     "viewer": "src/viewer/main.ts",
@@ -248,7 +253,7 @@
       "acceptance": "One command produces an uploadable zip; the script fails loudly if a dev artefact is present.",
       "status": "done",
       "completed": "2026-08-31",
-      "implementation_note": "scripts/package.mjs rebuilds from clean and REFUSES to package if it finds dev artefacts (dev/, assets/, .map, harness, .ts), surviving dev hooks (__paDev / __paHarness / exportAndReload), a manifest/package version mismatch, declared host_permissions, missing or empty icons, or a description over 132 chars. Zips dist/ CONTENTS so manifest.json is at the archive root. Uses the `zip` CLI — fine on macOS/Linux, needs WSL or Git Bash on Windows."
+      "implementation_note": "scripts/package.mjs rebuilds from clean and REFUSES to package if it finds dev artefacts (dev/, assets/, .map, harness, .ts), surviving dev hooks (__paDev / __paHarness / exportAndReload), a manifest/package version mismatch, declared host_permissions, missing or empty icons, or a description over 132 chars. Zips dist/ CONTENTS so manifest.json is at the archive root. Uses the `zip` CLI — fine on macOS/Linux, needs WSL or Git Bash on Windows. The host_permissions gate now allows exactly [\"file:///*\"] and refuses anything else — verified by injecting <all_urls>."
     },
     {
       "id": "p2-store-listing-assets",
@@ -332,6 +337,41 @@
       "detail": "The manifest was already correct (no host_permissions). The \"On all sites\" the owner saw was a grant RETAINED from the pre-refactor install: Chrome keeps granted optional host permissions across an unpacked reload because the extension ID is stable. Added a one-time migration, revokeLegacyBroadHostGrants(), that removes <all_urls> / *://*/* / http://*/* / https://*/* on onInstalled and records a flag.",
       "implementation_note": "Runs ONCE, not on every startup — the chrome://extensions dropdown lets a user deliberately choose \"On all sites\", which grants exactly those patterns, and revoking on every start would silently undo their choice.",
       "acceptance": "A freshly added unpacked install shows Site access = \"On click\" with no site listed."
+    },
+    {
+      "id": "p2-local-file-handoff",
+      "title": "Read file:// PDFs in the service worker and hand them over via IndexedDB",
+      "priority": "P0",
+      "status": "done",
+      "completed": "2026-08-31",
+      "blocks_submission": false,
+      "effort": "M",
+      "files": [
+        "src/core/handoff.ts",
+        "src/background/service-worker.ts",
+        "src/viewer/main.ts",
+        "manifest.json",
+        "scripts/package.mjs"
+      ],
+      "detail": "viewer.html?file=file:///... can never work: Chrome blocks file:// SUBRESOURCE loads from any document (\"Not allowed to load local resource\"), and that renderer check runs before extension permissions are consulted, so no grant fixes it. A service worker is not a document, so it can read the file and stage the bytes for the viewer.",
+      "implementation_note": "Transport is IndexedDB, not messaging: chrome.runtime.sendMessage JSON-serialises so an ArrayBuffer arrives as {}; URL.createObjectURL does not exist in a service worker; chrome.storage.local is 10MB and JSON. IndexedDB is shared across extension contexts on the same origin and stores binary natively. Records are single-use — takeHandoff reads and deletes in ONE transaction — with a 5-minute TTL and a sweep on startup for tabs closed before the viewer ran. Routing: ?token= for local, ?file= for http(s), ?reason=file-access when the toggle is off.",
+      "acceptance": "Clicking the action on a file:// PDF opens it in the editor; reloading that tab reports the token consumed; remote PDFs unaffected."
+    },
+    {
+      "id": "p2-zero-extension-errors",
+      "title": "Eliminate every avoidable error on the chrome://extensions card",
+      "priority": "P1",
+      "status": "done",
+      "completed": "2026-08-31",
+      "blocks_submission": false,
+      "effort": "S",
+      "files": [
+        "src/viewer/main.ts",
+        "src/background/service-worker.ts"
+      ],
+      "detail": "Two sources. (1) openUrl() would fetch whatever was in ?file=, so a stale ?file=file:// link threw \"Not allowed to load local resource\"; it now refuses any non-http(s) scheme up front and explains the toolbar/picker routes. The exit fallback likewise no longer sets location.href to a file:// URL. (2) Async listener bodies in the worker could leak unhandled rejections when a tab closed mid-flight.",
+      "implementation_note": "All worker listeners now run through guard(), which logs with console.warn. That distinction matters: chrome://extensions collects uncaught exceptions, unhandled rejections and console.error, but NOT console.warn — so recoverable conditions stay out of the panel while genuine failures (render, export, handoff read) still use console.error and still surface.",
+      "acceptance": "Clicking through every path leaves the extension card with no Errors button."
     }
   ],
   "renamed_from": "pdf-annotator (directory name unchanged; product name is ScribblePDF as of 2026-08-31)",
@@ -371,7 +411,7 @@
     "listing_copy": "store/LISTING.md",
     "privacy_policy": "docs/PRIVACY.md (placeholders <CONTACT_EMAIL> and <REPOSITORY_URL> must be filled before publishing)",
     "package_command": "npm run package -> releases/scribblepdf-<version>.zip",
-    "current_package": "releases/scribblepdf-0.1.0.zip (2.54 MB, 200 files)",
-    "version_note": "Still 0.1.0. Bump package.json to 1.0.0 before a public listing; build.mjs syncs the manifest."
+    "current_package": "releases/scribblepdf-1.0.1.zip (2.54 MB, 200 files)",
+    "version_note": "package.json is 1.0.1; build.mjs syncs the manifest. If you would rather submit the first listing as 1.0.0, set it back and re-run npm run package."
   }
 }

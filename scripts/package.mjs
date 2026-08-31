@@ -70,8 +70,15 @@ for (const f of files.filter((f) => f.endsWith('.js'))) {
 if (manifest.version !== pkg.version) {
   fail(`manifest version ${manifest.version} != package.json ${pkg.version}`);
 }
-if (manifest.host_permissions) {
-  fail('manifest declares host_permissions; the model is optional-only');
+// file:///* is the one allowed declaration: file access cannot be requested at
+// runtime, it is governed by a toggle that defaults to off, and declaring the
+// pattern is the only way to make that toggle available. Anything else here
+// would mean site access at install, which is what the optional model avoids.
+const ALLOWED_HOST_PERMISSIONS = ['file:///*'];
+for (const pattern of manifest.host_permissions ?? []) {
+  if (!ALLOWED_HOST_PERMISSIONS.includes(pattern)) {
+    fail(`manifest declares host_permission "${pattern}"; only ${ALLOWED_HOST_PERMISSIONS.join(', ')} is allowed`);
+  }
 }
 if (!manifest.icons) fail('manifest has no icons');
 for (const [size, rel] of Object.entries(manifest.icons ?? {})) {
