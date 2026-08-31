@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ScribblePDF</title>
+    <link rel="stylesheet" href="viewer.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="pa-topbar">
+        <span class="pa-brand">
+          <span class="pa-brand__dot"></span>
+          ScribblePDF
+        </span>
+        <span id="doc-title" class="pa-topbar__title"></span>
+        <span class="pa-spacer"></span>
+        <span class="pa-badge" title="All processing happens in this tab. Nothing is uploaded.">
+          Local only
+        </span>
+        <span id="status" class="pa-status"></span>
+        <button id="exit" class="pa-exit" type="button" hidden
+                title="Close the editor and go back to the original PDF">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="2.1" stroke-linecap="round" aria-hidden="true">
+            <path d="M6.5 6.5 17.5 17.5"/><path d="M17.5 6.5 6.5 17.5"/>
+          </svg>
+          <span>Exit editor</span>
+        </button>
+      </header>
+
+      <main id="scroll" class="pa-scroll">
+        <div id="pages" class="pa-pages"></div>
+
+        <section id="empty" class="pa-empty" hidden>
+          <h1 id="empty-title">Open a PDF</h1>
+          <p id="empty-body">Drop a file anywhere on this page, or choose one from your computer.</p>
+          <p class="pa-empty__note" data-note hidden></p>
+          <div class="pa-empty__actions">
+            <button id="grant" class="pa-btn pa-btn--primary pa-btn--lg" type="button" hidden></button>
+            <label id="pick" class="pa-btn pa-btn--primary pa-btn--lg" for="file">Choose PDF</label>
+          </div>
+          <p class="pa-hint">Your file is opened locally and never leaves this browser.</p>
+        </section>
+      </main>
+
+      <!-- Kept outside the (hidden) empty state so the toolbar can trigger it. -->
+      <input id="file" type="file" accept="application/pdf,.pdf" hidden />
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

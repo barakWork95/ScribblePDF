@@ -1,0 +1,29 @@
+{
+  "name": "scribblepdf",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ScribblePDF \u2014 client-side Chrome MV3 extension for annotating and signing PDFs in-tab. Zero server, local-first.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "icons": "node scripts/make-icons.mjs",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "node scripts/test-bidi.mjs",
+    "check": "npm run typecheck && npm test",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "bidi-js": "^1.0.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.9.155"
+  }
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ScribblePDF icon preview</title>
+    <style>
+      body { margin: 0; padding: 28px; background: #f2f4f7; color: #16181d;
+             font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      h2 { font-size: 14px; margin: 26px 0 10px; color: #555; font-weight: 600; }
+      .row { display: flex; align-items: flex-end; gap: 22px; flex-wrap: wrap; }
+      .cell { text-align: center; }
+      .cell span { display: block; margin-top: 6px; font-size: 11px; color: #777; }
+      canvas { image-rendering: pixelated; background: #fff; box-shadow: 0 0 0 1px #dde1e6; }
+      .ctx { display: flex; gap: 0; align-items: center; margin-top: 10px; }
+      .ctx div { padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+      .light { background: #fff; } .grey { background: #cfd4da; } .dark { background: #202329; color:#fff; }
+    </style>
+  </head>
+  <body>
+    <div id="out"></div>
+    <script>
+      const SIZES = [16, 32, 48, 128];
+      /** Which source drives which size — small sizes get the simplified art. */
+      const SOURCE_FOR = { 16: 'small', 32: 'small', 48: 'small', 128: 'full' };
+      const svg = {};
+      const png = {};
+
+      async function raster(text, size) {
+        const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
+        const img = new Image();
+        await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, size, size);
+        return c;
+      }
+
+      function label(canvas, text) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        const span = document.createElement('span');
+        span.textContent = text;
+        cell.append(canvas, span);
+        return cell;
+      }
+
+      (async () => {
+        svg.full = await (await fetch('/assets/icon.svg')).text();
+        svg.small = await (await fetch('/assets/icon-small.svg')).text();
+        const out = document.getElementById('out');
+
+        // True size, as Chrome will actually show them.
+        const trueRow = document.createElement('div');
+        trueRow.className = 'row';
+        for (const size of SIZES) {
+          const c = await raster(svg[SOURCE_FOR[size]], size);
+          png[size] = c.toDataURL('image/png');
+          trueRow.append(label(c, size + 'px'));
+        }
+        const h1 = document.createElement('h2');
+        h1.textContent = 'Actual size';
+        out.append(h1, trueRow);
+
+        // Nearest-neighbour blow-up, to inspect edge quality per size.
+        const zoomRow = document.createElement('div');
+        zoomRow.className = 'row';
+        for (const size of SIZES) {
+          const c = await raster(svg[SOURCE_FOR[size]], size);
+          c.style.width = c.style.height = Math.min(size * (128 / size), 160) + 'px';
+          c.style.width = c.style.height = (size <= 32 ? size * 6 : size * 1.6) + 'px';
+          zoomRow.append(label(c, size + 'px zoomed'));
+        }
+        const h2 = document.createElement('h2');
+        h2.textContent = 'Magnified (pixel grid)';
+        out.append(h2, zoomRow);
+
+        // Toolbar context: what a 16px icon looks like on real chrome surfaces.
+        const h3 = document.createElement('h2');
+        h3.textContent = 'In context (16px on light / grey / dark chrome)';
+        const ctx = document.createElement('div');
+        ctx.className = 'ctx';
+        for (const cls of ['light', 'grey', 'dark']) {
+          const d = document.createElement('div');
+          d.className = cls;
+          const img = new Image();
+          img.src = png[16];
+          img.width = img.height = 16;
+          d.append(img, document.createTextNode('ScribblePDF'));
+          ctx.append(d);
+        }
+        out.append(h3, ctx);
+
+        window.__icons = png;
+        window.__ready = true;
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,40 @@
+<!--
+  ScribblePDF — full-detail icon. Used for the 128px store/listing size only.
+
+  Palette
+    card  #FF7F50  coral, as specified
+    ink   #C6F03B  lime
+
+  On the ink colour: the brief specified #32CD32, but #32CD32 against #FF7F50
+  is a 1.17:1 contrast ratio, so the pen and check all but disappear into the
+  card. The reference image itself uses a far lighter yellow-green, so the ink
+  is lifted to #C6F03B (1.9:1). That is what makes the mark read at any size.
+  Swap the two ink colours below to revert to the literal spec.
+
+  Composition: the check sits high-left, the signature sweeps low, and the pen
+  runs up the right with its nib aimed at the end of the sweep, so the three
+  elements occupy separate bands instead of colliding in the middle.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"
+     role="img" aria-label="ScribblePDF">
+  <title>ScribblePDF</title>
+
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#FF7F50"/>
+
+  <!-- Document, tone-on-tone: texture behind the ink, not a competing shape -->
+  <path d="M34 24h38l22 22v54a8 8 0 0 1-8 8H34a8 8 0 0 1-8-8V32a8 8 0 0 1 8-8z"
+        fill="#FFFFFF" fill-opacity="0.17"/>
+  <path d="M72 24l22 22H78a6 6 0 0 1-6-6z" fill="#FFFFFF" fill-opacity="0.26"/>
+
+  <g fill="none" stroke="#C6F03B" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 62l14 15 30-35" stroke-width="10"/>
+    <path d="M28 98c7-11 15-13 18-7 3 6-4 13 2 14 6 1 13-7 19-13" stroke-width="7"/>
+  </g>
+
+  <!-- Pen: nib low-centre, body up to the top-right corner -->
+  <g transform="translate(84 104) rotate(33)">
+    <path d="M0 0l-6.5-15h13z" fill="#C6F03B"/>
+    <rect x="-6.5" y="-22" width="13" height="6" rx="1.6" fill="#C6F03B"/>
+    <rect x="-6.5" y="-70" width="13" height="45" rx="6.5" fill="#C6F03B"/>
+  </g>
+</svg>

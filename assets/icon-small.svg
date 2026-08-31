@@ -1,0 +1,18 @@
+<!--
+  ScribblePDF — simplified icon. Drives 16px, 32px and 48px.
+
+  The pen, the document fold and the signature loop are sub-pixel noise below
+  ~64px, so they are dropped rather than downsampled into mud. What survives is
+  the coral card, one heavy check, and a single scribble stroke beneath it —
+  enough to read as "marked and signed" at 16px. Drawing small sizes separately
+  is standard icon practice; one artwork scaled down is not.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"
+     role="img" aria-label="ScribblePDF">
+  <title>ScribblePDF</title>
+  <rect x="2" y="2" width="124" height="124" rx="29" fill="#FF7F50"/>
+  <g fill="none" stroke="#C6F03B" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 60l20 21 44-48" stroke-width="15"/>
+    <path d="M34 101c10-7 21-7 30-3s18 3 26-5" stroke-width="9"/>
+  </g>
+</svg>

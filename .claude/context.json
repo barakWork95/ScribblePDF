@@ -1,0 +1,377 @@
+{
+  "project": "scribblepdf",
+  "description": "ScribblePDF — Chrome MV3 extension for client-side PDF annotation and signing. Local-first, zero server.",
+  "updated": "2026-08-31",
+  "phase": {
+    "current": "phase-2-web-store-readiness",
+    "status": "in progress — permissions, metrics, icons, packaging and store copy done; screenshots + publish outstanding",
+    "next": "store assets, privacy policy, packaging, QA matrix"
+  },
+  "stack": {
+    "language": "TypeScript (strict)",
+    "bundler": "esbuild via build.mjs",
+    "framework": "none — vanilla DOM + observable store",
+    "render": "pdfjs-dist 4.10",
+    "export": "pdf-lib 1.17",
+    "storage": "chrome.storage.local",
+    "text": "@pdf-lib/fontkit (embedding/subsetting) + bidi-js (UBA) + bundled Noto Sans Hebrew"
+  },
+  "invariants": [
+    "No network request except fetching the PDF the user opened. CSP script-src 'self'.",
+    "Annotations are stored in normalized view space (0..1 of the rendered page box, /Rotate applied); sizes are fractions of page height.",
+    "The ONLY conversion to PDF user space is viewport.convertToPdfPoint() in src/core/geometry.ts.",
+    "Export mutates the original PDF bytes with pdf-lib; never re-encode pdf.js raster output.",
+    "pdf.js detaches the ArrayBuffer passed to getDocument — always copy first.",
+    "RenderTask.cancel() is async; await the rejection before rendering the same canvas again.",
+    "Check/cross geometry lives once in GLYPHS and is shared by screen and export.",
+    "Hebrew is embedded as a real subsetted font, not rasterized. Only scripts outside both faces (Arabic/CJK/emoji) fall back to raster.",
+    "fontkit reverses RTL spans itself: hand Hebrew spans to drawText in LOGICAL order; reverse+mirror non-Hebrew spans inside RTL runs yourself.",
+    "Base direction must be 'auto' on BOTH sides — dir=\"auto\" on the DOM node and getEmbeddingLevels(line,'auto') in the exporter — or mixed lines differ between screen and paper.",
+    "Noto Sans Hebrew is Hebrew-only (148 code points): every line needs per-run font splitting by coverage.",
+    "The @font-face in viewer.css pins the on-screen Hebrew face to the embedded one; without it, metrics drift.",
+    "core/text-style.ts must stay dependency-free — it is what keeps the exporter (pdf-lib + fontkit) out of the initial chunk.",
+    "No host permissions are declared at install. Sites are granted individually from the viewer; permissions.request() must be called directly from a click handler or the gesture is lost.",
+    "The redirect rule is SESSION-scoped, not dynamic: excludedTabIds is session-only and is what lets \"exit editor\" escape the auto-open redirect.",
+    "Font metrics are measured at runtime, never tabulated — the CSS stack resolves to different faces per OS. warmUpFontMetrics() must complete before anything calls baselineRatio.",
+    "assets/*.svg is the icon source of truth; public/icons/*.png is generated. Never hand-edit the PNGs.",
+    "A \"--\" sequence inside an XML comment makes an SVG fail to parse, silently when loaded via <img>. make-icons.mjs asserts against it.",
+    "Never hand-zip dist/. `npm run package` is the gate that stops dev artefacts and dev hooks reaching the store."
+  ],
+  "entrypoints": {
+    "viewer": "src/viewer/main.ts",
+    "background": "src/background/service-worker.ts",
+    "coordinate_contract": "src/core/types.ts",
+    "geometry": "src/core/geometry.ts",
+    "export": "src/core/exporter.ts",
+    "bidi": "src/core/bidi-layout.ts",
+    "text_metrics": "src/core/text-style.ts",
+    "toolbar": "src/ui/toolbar.ts"
+  },
+  "commands": {
+    "install": "npm install",
+    "build": "npm run build",
+    "watch": "npm run dev",
+    "typecheck": "npm run typecheck",
+    "icons": "npm run icons",
+    "fixture": "node scripts/make-sample-pdf.mjs",
+    "harness": "node build.mjs --dev && node scripts/serve.mjs 5273",
+    "harness_url": "http://localhost:5273/dev/harness.html?file=/dev/sample.pdf",
+    "test": "npm test",
+    "check": "npm run check"
+  },
+  "open_issues": [
+    {
+      "id": "non-hebrew-scripts-rasterized",
+      "severity": "low",
+      "summary": "Hebrew now embeds as real selectable text. Arabic, CJK and emoji still fall back to a PNG raster: visually correct, not selectable.",
+      "fix": "Ship an additional face per script and extend classify() in exporter.ts."
+    },
+    {
+      "id": "no-actualtext",
+      "severity": "low",
+      "summary": "Copying Hebrew out of the exported PDF yields visual order, because we emit no /ActualText marked content. Rendering and selection are correct; only clipboard order is affected.",
+      "fix": "Needs marked-content support in pdf-lib, or a post-pass over the content stream."
+    },
+    {
+      "id": "bundle-weight",
+      "severity": "low",
+      "summary": "vendor/cmaps (1.6MB) + vendor/standard_fonts (800KB) dominate the 5.5MB package.",
+      "fix": "Trim to needed cmaps or lazy-load from the extension origin."
+    },
+    {
+      "id": "dnr-query-strings",
+      "severity": "low",
+      "summary": "Auto-open redirect rule skips .pdf URLs carrying a query string because regexSubstitution splices the URL raw.",
+      "fix": "Handle via a webNavigation listener that percent-encodes, or accept and rely on the toolbar button."
+    }
+  ],
+  "bundle": {
+    "package_total": "6.4 MB",
+    "initial_js": "363 KB (viewer/main.js)",
+    "lazy_js": "1.3 MB (viewer/chunk-exporter-*.js, loaded on first export)",
+    "largest_assets": [
+      "vendor/cmaps 1.6 MB",
+      "vendor/standard_fonts 1.0 MB",
+      "vendor/fonts 64 KB"
+    ]
+  },
+  "phase_2_tasks": [
+    {
+      "id": "p2-optional-host-permissions",
+      "title": "Replace host_permissions <all_urls> with optional_host_permissions",
+      "priority": "P0",
+      "blocks_submission": true,
+      "effort": "M",
+      "files": [
+        "manifest.json",
+        "src/viewer/main.ts",
+        "src/background/service-worker.ts"
+      ],
+      "detail": "Broad host access is the single heaviest review item and the main install-time scare. Move <all_urls> to optional_host_permissions and request per origin. Do the request from the VIEWER page, not the service worker: permissions.request needs a user gesture, and a button click inside an extension page is the reliable source. Flow: openUrl() calls permissions.contains() first; on a miss it renders an \"Allow PDF Annotator to read files from <host>\" card, and the button calls permissions.request({origins:[origin+\"/*\"]}) then retries the fetch. This also covers the auto-open redirect path, which has no gesture at all.",
+      "acceptance": "Fresh install shows no host warning; opening a remote PDF prompts once per origin; the file picker still works with zero grants.",
+      "status": "done",
+      "completed": "2026-08-31",
+      "implementation_note": "Grant flow lives in the viewer empty state: permissions.contains() gates openUrl, and an \"Allow <host>\" button calls permissions.request() directly from the click. Verified via the harness with origins revoked."
+    },
+    {
+      "id": "p2-narrow-web-accessible-resources",
+      "title": "Narrow web_accessible_resources to viewer/viewer.html",
+      "priority": "P0",
+      "blocks_submission": false,
+      "effort": "S",
+      "files": [
+        "manifest.json"
+      ],
+      "detail": "VERIFIED: vendor/* (pdf worker, cmaps, standard_fonts, Hebrew TTFs) and icons/* are only ever loaded from the viewer, which is an extension page loading same-origin resources — those need no WAR entry at all. Only viewer/viewer.html needs to be web-accessible, and only because the declarativeNetRequest redirect is a web-initiated navigation. Exposing the whole vendor tree to every site is needless attack surface and reviewers flag it.",
+      "acceptance": "WAR lists only viewer/viewer.html; action-click and auto-open both still work.",
+      "status": "done",
+      "completed": "2026-08-31",
+      "implementation_note": "Now [\"viewer/viewer.html\"] only. vendor/* and icons/* were never needed — the viewer reads them same-origin."
+    },
+    {
+      "id": "p2-replace-tabs-permission",
+      "title": "Swap the \"tabs\" permission for \"activeTab\"",
+      "priority": "P0",
+      "blocks_submission": false,
+      "effort": "S",
+      "files": [
+        "manifest.json",
+        "src/background/service-worker.ts"
+      ],
+      "detail": "The only reason \"tabs\" is present is reading tab.url in action.onClicked; tabs.update/tabs.create do not require it. activeTab grants host access to the active tab on invocation, which should make tab.url readable in that callback. VERIFY EMPIRICALLY before relying on it — if url comes back undefined, fall back to passing no file parameter and letting the viewer show the picker.",
+      "acceptance": "\"tabs\" removed from permissions; clicking the action on a PDF still opens it in the viewer.",
+      "status": "done",
+      "completed": "2026-08-31",
+      "implementation_note": "activeTab replaces tabs. Falls back to opening an empty viewer if tab.url is ever withheld. NEEDS REAL-INSTALL CONFIRMATION that tab.url is populated in action.onClicked."
+    },
+    {
+      "id": "p2-scope-dnr-to-granted-origins",
+      "title": "Scope the auto-open redirect rule to granted origins",
+      "priority": "P0",
+      "blocks_submission": false,
+      "effort": "M",
+      "files": [
+        "src/background/service-worker.ts"
+      ],
+      "detail": "A declarativeNetRequest redirect needs host access for the matched request, so once hosts are optional the current blanket rule cannot fire everywhere. Rebuild rules from chrome.permissions.getAll(), one per granted origin via condition.requestDomains, and re-sync on permissions.onAdded / onRemoved as well as the existing prefs change. This is strictly better than today: auto-open applies only where the user granted access.",
+      "acceptance": "Auto-open fires on granted origins only; revoking an origin removes its rule.",
+      "depends_on": [
+        "p2-optional-host-permissions"
+      ],
+      "status": "done",
+      "completed": "2026-08-31",
+      "implementation_note": "Rules rebuilt from permissions.getAll() and moved from dynamic to SESSION scope, because excludedTabIds (used by exit-editor) is session-only. Re-registered on onStartup/onInstalled and on permissions.onAdded/onRemoved."
+    },
+    {
+      "id": "p2-runtime-font-metrics",
+      "title": "Measure font metrics at runtime instead of hardcoding them",
+      "priority": "P1",
+      "blocks_submission": false,
+      "effort": "M",
+      "files": [
+        "src/core/text-style.ts",
+        "src/core/exporter.ts"
+      ],
+      "detail": "CROSS-PLATFORM BUG, not just cleanup. METRICS in text-style.ts holds hhea ascent/descent tuned for the macOS resolution of the CSS stack. \"Helvetica\" resolves to Arial on Windows and to Liberation Sans or DejaVu Sans on Linux, whose metrics differ — so the on-screen baseline and the exported baseline drift apart on those platforms, by a fraction of a line. Replace the table with a measurement: render a probe glyph to a canvas and read TextMetrics.fontBoundingBoxAscent/Descent (Chrome 87+) for the actually-resolved font, cache per family, feed that into baselineRatio.",
+      "acceptance": "Text lands on the same baseline in the export as on screen, on macOS, Windows and Linux.",
+      "status": "done",
+      "completed": "2026-08-31",
+      "implementation_note": "Measured via TextMetrics.fontBoundingBoxAscent/Descent for the resolved font; hardcoded table kept only as fallback. warmUpFontMetrics() loads the Hebrew face before anything measures it. On macOS measured and tabulated agree to 0.0015em."
+    },
+    {
+      "id": "p2-encrypted-pdf-warning",
+      "title": "Warn before exporting a PDF that was encrypted",
+      "priority": "P1",
+      "blocks_submission": false,
+      "effort": "S",
+      "files": [
+        "src/core/exporter.ts",
+        "src/viewer/main.ts"
+      ],
+      "detail": "exportPdf loads with ignoreEncryption:true so protected files still open. pdf-lib cannot re-encrypt, so the exported copy silently loses its protection. Detect doc.isEncrypted and surface a clear confirmation before writing the file rather than quietly stripping a security property the user chose.",
+      "acceptance": "Exporting an encrypted source shows an explicit confirmation naming the consequence.",
+      "status": "todo"
+    },
+    {
+      "id": "p2-acroform-handling",
+      "title": "Decide behaviour for PDFs with interactive form fields",
+      "priority": "P1",
+      "blocks_submission": false,
+      "effort": "M",
+      "files": [
+        "src/core/exporter.ts"
+      ],
+      "detail": "Annotations are appended to page content, so on an AcroForm document they paint over fields that remain live and editable — a signature can be scrolled away from under. Decide between flattening the form on export (doc.getForm().flatten()) or warning, and make it explicit either way.",
+      "acceptance": "A form PDF exports with documented, intentional behaviour covered by the QA matrix.",
+      "status": "todo"
+    },
+    {
+      "id": "p2-error-surfaces",
+      "title": "User-visible errors for the remaining failure paths",
+      "priority": "P1",
+      "blocks_submission": false,
+      "effort": "S",
+      "files": [
+        "src/viewer/main.ts"
+      ],
+      "detail": "Cover: exporter chunk fails to load, storage quota exceeded when saving a signature, and pdf.js failing mid-render on a corrupt page. Today these log to console or fail silently.",
+      "acceptance": "Each failure path produces a readable message in the status bar, not a console-only error.",
+      "status": "todo"
+    },
+    {
+      "id": "p2-i18n-hebrew-ui",
+      "title": "Add _locales with English and Hebrew, and an RTL viewer layout",
+      "priority": "P1",
+      "blocks_submission": false,
+      "effort": "M",
+      "files": [
+        "manifest.json",
+        "_locales/",
+        "src/ui/",
+        "public/viewer/viewer.css"
+      ],
+      "detail": "The extension already handles Hebrew content properly; the interface does not speak it. Move the name, description and UI strings into _locales/en and _locales/he, use __MSG_name__ in the manifest, and mirror the viewer chrome under dir=\"rtl\". The store listing can then carry a Hebrew translation too.",
+      "acceptance": "Chrome set to Hebrew shows a Hebrew UI with mirrored layout; English unchanged.",
+      "status": "todo"
+    },
+    {
+      "id": "p2-packaging",
+      "title": "Add a store packaging script and cut version 1.0.0",
+      "priority": "P0",
+      "blocks_submission": true,
+      "effort": "S",
+      "files": [
+        "package.json",
+        "scripts/package.mjs"
+      ],
+      "detail": "npm run package: clean, production build, assert no dev harness / source maps / dev hooks in the output, then zip dist/ to release/pdf-annotator-<version>.zip. Bump package.json to 1.0.0 (build.mjs already syncs the manifest version).",
+      "acceptance": "One command produces an uploadable zip; the script fails loudly if a dev artefact is present.",
+      "status": "done",
+      "completed": "2026-08-31",
+      "implementation_note": "scripts/package.mjs rebuilds from clean and REFUSES to package if it finds dev artefacts (dev/, assets/, .map, harness, .ts), surviving dev hooks (__paDev / __paHarness / exportAndReload), a manifest/package version mismatch, declared host_permissions, missing or empty icons, or a description over 132 chars. Zips dist/ CONTENTS so manifest.json is at the archive root. Uses the `zip` CLI — fine on macOS/Linux, needs WSL or Git Bash on Windows."
+    },
+    {
+      "id": "p2-store-listing-assets",
+      "title": "Produce Web Store listing assets and copy",
+      "priority": "P0",
+      "blocks_submission": true,
+      "effort": "M",
+      "detail": "Required: 128x128 icon (done — ScribblePDF artwork, assets/icon.svg); at least one screenshot at 1280x800 or 640x400 (plan four or five: toolbar over a document, text annotation, signature modal, Hebrew annotation, exported result). Optional but worth having: 440x280 small promo tile. Copy needed: summary (<=132 chars), full description, category (Productivity), and a single-purpose statement — \"annotate and sign PDF documents locally in the browser\". Name is now plain \"ScribblePDF\" (done).",
+      "acceptance": "All assets sized correctly and listing copy drafted for review.",
+      "status": "copy-written",
+      "remaining": "Screenshots (4-5 @ 1280x800), optional 440x280 promo tile, summary and description copy, category, single-purpose statement.",
+      "implementation_note": "All copy drafted in store/LISTING.md: name, category, short + detailed description, feature highlights, single-purpose statement, per-permission justifications. REMAINING: 1-5 screenshots at 1280x800."
+    },
+    {
+      "id": "p2-privacy-and-disclosures",
+      "title": "Privacy policy, data-use disclosures and permission justifications",
+      "priority": "P0",
+      "blocks_submission": true,
+      "effort": "S",
+      "detail": "Publish a short privacy policy (GitHub Pages is fine) stating that no data is collected or transmitted and that files and signatures never leave the device. In the dashboard: complete the data-use disclosure (no collection), certify no remote code (true — everything is bundled, CSP is script-src self), and write a justification per permission. Drafts: storage = \"remembers your tool preferences and saved signatures on your device\"; declarativeNetRequest = \"optional, off by default; opens PDF links in the annotator instead of the built-in viewer when you turn it on\"; activeTab = \"reads the URL of the PDF in the current tab when you click the toolbar icon\"; optional host permissions = \"downloads the PDF you chose to open, only for sites you approve\".",
+      "acceptance": "Policy live at a public URL; every permission has a justification; disclosures complete.",
+      "status": "copy-written",
+      "implementation_note": "Full text in docs/PRIVACY.md and the disclosure/justification tables in store/LISTING.md. REMAINING: replace <CONTACT_EMAIL> and <REPOSITORY_URL> in docs/PRIVACY.md, publish it at a public URL (GitHub Pages), paste that URL into the dashboard."
+    },
+    {
+      "id": "p2-qa-matrix",
+      "title": "Run and record the pre-release QA matrix",
+      "priority": "P1",
+      "blocks_submission": true,
+      "effort": "M",
+      "detail": "Documents: linearized, encrypted, AcroForm, XFA, scanned image-only, embedded-CJK, /Rotate 90/180/270, mixed page sizes, 1 page, 500+ pages. Platforms: macOS, Windows, Linux (font resolution differs — see p2-runtime-font-metrics). Chrome: the declared minimum 116 and current stable. Flows: fresh install with zero grants, grant then revoke an origin, file:// with and without the \"Allow access to file URLs\" toggle, auto-open on and off, signature persistence across restart.",
+      "acceptance": "Matrix executed with results recorded; no P0/P1 defects open.",
+      "status": "todo"
+    },
+    {
+      "id": "p2-trim-cmaps",
+      "title": "Trim vendor/cmaps to shrink the package",
+      "priority": "P2",
+      "blocks_submission": false,
+      "effort": "S",
+      "detail": "cmaps (1.6 MB) and standard_fonts (1.0 MB) are 40% of the 6.4 MB package and only matter for CJK and documents without embedded fonts. Measure what a representative corpus actually needs before cutting.",
+      "acceptance": "Package materially smaller with no regression on the CJK QA documents.",
+      "status": "todo"
+    },
+    {
+      "id": "p2-feature-backlog",
+      "title": "Post-launch feature backlog",
+      "priority": "P3",
+      "blocks_submission": false,
+      "items": [
+        "Page operations: rotate, delete, reorder, insert",
+        "More tools: highlight, freehand draw, rectangle, image stamp",
+        "Additional script coverage (Arabic, CJK) via extra embedded faces",
+        "/ActualText marked content so RTL copy-paste yields logical order",
+        "Multi-select and alignment",
+        "Session recovery for unsaved annotations"
+      ],
+      "status": "todo"
+    },
+    {
+      "id": "p2-verify-in-real-extension",
+      "title": "Confirm the permission and exit flows in a real install",
+      "priority": "P0",
+      "status": "todo",
+      "blocks_submission": true,
+      "effort": "S",
+      "detail": "The dev harness shims chrome.*, so these paths are only exercised end to end once loaded unpacked: (1) the install-time prompt should now list NO site access; (2) opening a remote PDF should show \"Allow <host>\" and, after granting, load it; (3) Exit editor should return the tab to the original PDF; (4) with auto-open ON, Exit must NOT bounce straight back in — that is what the session-rule excludedTabIds bypass is for; (5) tab.url must be populated in action.onClicked under activeTab.",
+      "acceptance": "All five confirmed in an unpacked install on Chrome stable."
+    },
+    {
+      "id": "p2-site-access-default",
+      "title": "Default site access to \"On click\", not \"On all sites\"",
+      "priority": "P0",
+      "status": "done",
+      "completed": "2026-08-31",
+      "blocks_submission": true,
+      "effort": "S",
+      "files": [
+        "src/background/service-worker.ts"
+      ],
+      "detail": "The manifest was already correct (no host_permissions). The \"On all sites\" the owner saw was a grant RETAINED from the pre-refactor install: Chrome keeps granted optional host permissions across an unpacked reload because the extension ID is stable. Added a one-time migration, revokeLegacyBroadHostGrants(), that removes <all_urls> / *://*/* / http://*/* / https://*/* on onInstalled and records a flag.",
+      "implementation_note": "Runs ONCE, not on every startup — the chrome://extensions dropdown lets a user deliberately choose \"On all sites\", which grants exactly those patterns, and revoking on every start would silently undo their choice.",
+      "acceptance": "A freshly added unpacked install shows Site access = \"On click\" with no site listed."
+    }
+  ],
+  "renamed_from": "pdf-annotator (directory name unchanged; product name is ScribblePDF as of 2026-08-31)",
+  "phase_1": {
+    "status": "complete; owner smoke-tested the unpacked build 2026-08-31"
+  },
+  "branding": {
+    "name": "ScribblePDF",
+    "icon_sources": [
+      "assets/icon.svg (full, drives 128px)",
+      "assets/icon-small.svg (simplified, drives 16/32/48px)"
+    ],
+    "generated": "public/icons/icon{16,32,48,128}.png via `npm run icons` (@resvg/resvg-js, devDependency)",
+    "palette": {
+      "card": "#FF7F50",
+      "ink": "#C6F03B"
+    },
+    "ink_deviation": "Brief specified #32CD32; that is 1.17:1 against #FF7F50 and effectively invisible at 16px. The supplied reference image itself uses a lighter yellow-green, so ink is #C6F03B (1.9:1). Documented in both SVGs; two colour values revert it.",
+    "note": "Two artworks rather than one scaled: pen, document fold and signature loop are sub-pixel noise below ~64px."
+  },
+  "repository": {
+    "name": "ScribblePDF",
+    "state": "git initialised on branch main, no commits yet, no remote",
+    "note": "Working directory is still pdf-annotator/; the repo and product are ScribblePDF.",
+    "gitignore_covers": [
+      "node_modules/",
+      "dist/",
+      "releases/",
+      "dev/sample.pdf",
+      ".env*",
+      "*.pem",
+      "*.p12",
+      ".DS_Store"
+    ]
+  },
+  "store_artifacts": {
+    "listing_copy": "store/LISTING.md",
+    "privacy_policy": "docs/PRIVACY.md (placeholders <CONTACT_EMAIL> and <REPOSITORY_URL> must be filled before publishing)",
+    "package_command": "npm run package -> releases/scribblepdf-<version>.zip",
+    "current_package": "releases/scribblepdf-0.1.0.zip (2.54 MB, 200 files)",
+    "version_note": "Still 0.1.0. Bump package.json to 1.0.0 before a public listing; build.mjs syncs the manifest."
+  }
+}
