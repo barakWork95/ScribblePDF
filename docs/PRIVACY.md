@@ -21,7 +21,7 @@ what they open with it.
 Two things are saved in your browser's local extension storage, on your own
 computer:
 
-1. **Your preferences** — the tool, colour, font and size you last used.
+1. **Your preferences** — the tool, color, font and size you last used.
 2. **Signatures you chose to save** — the drawing itself, so you can reuse it
    instead of redrawing it for every document.
 
@@ -85,9 +85,9 @@ not have a mailing list to notify — please check here.
 
 Questions about this policy or the extension:
 
-**<CONTACT_EMAIL>**
+**barackv95@gmail.com**
 
-Source code: <REPOSITORY_URL>
+Source code: https://github.com/barakWork95/ScribblePDF
 
 <!--
   Before publishing: replace <CONTACT_EMAIL> and <REPOSITORY_URL>.
