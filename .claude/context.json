@@ -283,7 +283,7 @@
       "detail": "Publish a short privacy policy (GitHub Pages is fine) stating that no data is collected or transmitted and that files and signatures never leave the device. In the dashboard: complete the data-use disclosure (no collection), certify no remote code (true — everything is bundled, CSP is script-src self), and write a justification per permission. Drafts: storage = \"remembers your tool preferences and saved signatures on your device\"; declarativeNetRequest = \"optional, off by default; opens PDF links in the annotator instead of the built-in viewer when you turn it on\"; activeTab = \"reads the URL of the PDF in the current tab when you click the toolbar icon\"; optional host permissions = \"downloads the PDF you chose to open, only for sites you approve\".",
       "acceptance": "Policy live at a public URL; every permission has a justification; disclosures complete.",
       "status": "copy-written",
-      "implementation_note": "Full text in docs/PRIVACY.md and the disclosure/justification tables in store/LISTING.md. REMAINING: replace <CONTACT_EMAIL> and <REPOSITORY_URL> in docs/PRIVACY.md, publish it at a public URL (GitHub Pages), paste that URL into the dashboard."
+      "implementation_note": "Full text in docs/index.md (named index so GitHub Pages serves it at the site root) and the disclosure/justification tables in store/LISTING.md. Contact address and repository URL are filled in. REMAINING: enable GitHub Pages with source = main branch /docs folder, then paste https://barakwork95.github.io/ScribblePDF/ into the dashboard."
     },
     {
       "id": "p2-qa-matrix",
@@ -434,7 +434,7 @@
   },
   "store_artifacts": {
     "listing_copy": "store/LISTING.md",
-    "privacy_policy": "docs/PRIVACY.md (placeholders <CONTACT_EMAIL> and <REPOSITORY_URL> must be filled before publishing)",
+    "privacy_policy": "docs/index.md — published via GitHub Pages at https://barakwork95.github.io/ScribblePDF/ (requires Pages source = main /docs)",
     "package_command": "npm run package -> releases/scribblepdf-<version>.zip",
     "current_package": "releases/scribblepdf-1.0.1.zip (2.54 MB, 200 files)",
     "version_note": "package.json is 1.0.1; build.mjs syncs the manifest. If you would rather submit the first listing as 1.0.0, set it back and re-run npm run package."

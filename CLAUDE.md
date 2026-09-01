@@ -262,8 +262,8 @@ npm run package      # store-ready zip in releases/ (refuses on dev artefacts)
 ```
 
 Store materials: `store/LISTING.md` (listing copy, permission justifications,
-data disclosures) and `docs/PRIVACY.md` (privacy policy, has placeholders to
-fill before publishing).
+data disclosures) and `docs/index.md` (the privacy policy — named `index` so
+GitHub Pages serves it at the site root).
 
 Load `dist/` via `chrome://extensions` → Developer mode → **Load unpacked**.
 Open any PDF and click the extension's toolbar icon, or open the viewer and

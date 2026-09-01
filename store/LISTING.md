@@ -167,8 +167,9 @@ Then certify all three:
 **Remote code:** answer **No** — all JavaScript, fonts and WASM are bundled in
 the package, and the manifest's CSP is `script-src 'self'`.
 
-**Privacy policy URL:** required. Publish `docs/PRIVACY.md` (GitHub Pages on the
-ScribblePDF repository is sufficient) and paste the URL.
+**Privacy policy URL:** required. `docs/index.md` is the policy; enable GitHub
+Pages on the ScribblePDF repository with source = `main` branch, `/docs` folder,
+then paste `https://barakwork95.github.io/ScribblePDF/` into the dashboard.
 
 ## Assets checklist
 
