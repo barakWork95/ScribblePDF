@@ -88,11 +88,3 @@ Questions about this policy or the extension:
 **barackv95@gmail.com**
 
 Source code: https://github.com/barakWork95/ScribblePDF
-
-<!--
-  Before publishing: replace <CONTACT_EMAIL> and <REPOSITORY_URL>.
-
-  Use an address you are willing to make public — a store listing's privacy
-  policy is indexed, and the address will be scraped. An alias or a
-  project-specific address is a better idea than a personal inbox.
--->
