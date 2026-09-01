@@ -1,7 +1,7 @@
 {
   "project": "scribblepdf",
   "description": "ScribblePDF — Chrome MV3 extension for client-side PDF annotation and signing. Local-first, zero server.",
-  "updated": "2026-08-31",
+  "updated": "2026-09-01",
   "phase": {
     "current": "phase-2-web-store-readiness",
     "status": "in progress — permissions, metrics, icons, packaging and store copy done; screenshots + publish outstanding",
@@ -40,7 +40,8 @@
     "file:// access cannot be requested at runtime: chrome.permissions.request() does not grant it. Declaring host_permissions [\"file:///*\"] is what makes the \"Allow access to file URLs\" toggle available; the toggle is off by default and grants no site access.",
     "Handoff records are single-use and short-lived. Never make them persistent — the PDF bytes must not outlive the load.",
     "The viewer must never fetch or navigate to a non-http(s) URL. openUrl() refuses other schemes; local files come only through the ?token= handoff.",
-    "Worker listeners route through guard() and log recoverable conditions with console.warn — chrome://extensions collects console.error and unhandled rejections, not warnings. Do not use console.error for expected states."
+    "Worker listeners route through guard() and log recoverable conditions with console.warn — chrome://extensions collects console.error and unhandled rejections, not warnings. Do not use console.error for expected states.",
+    "UI that must appear should never gate its reveal on requestAnimationFrame — rAF does not run in a backgrounded tab."
   ],
   "entrypoints": {
     "viewer": "src/viewer/main.ts",
@@ -65,6 +66,12 @@
     "check": "npm run check"
   },
   "open_issues": [
+    {
+      "id": "review-url-extension-id",
+      "severity": "medium",
+      "summary": "REVIEW_URL in src/core/review.ts hardcodes the listing id bjifddabolpnopkphamnoandkflhfepc. ScribblePDF is not published yet, so until the first submission is live this link 404s.",
+      "fix": "Confirm the id against the real listing after publishing; it is a single constant."
+    },
     {
       "id": "non-hebrew-scripts-rasterized",
       "severity": "low",
@@ -372,6 +379,24 @@
       "detail": "Two sources. (1) openUrl() would fetch whatever was in ?file=, so a stale ?file=file:// link threw \"Not allowed to load local resource\"; it now refuses any non-http(s) scheme up front and explains the toolbar/picker routes. The exit fallback likewise no longer sets location.href to a file:// URL. (2) Async listener bodies in the worker could leak unhandled rejections when a tab closed mid-flight.",
       "implementation_note": "All worker listeners now run through guard(), which logs with console.warn. That distinction matters: chrome://extensions collects uncaught exceptions, unhandled rejections and console.error, but NOT console.warn — so recoverable conditions stay out of the panel while genuine failures (render, export, handoff read) still use console.error and still surface.",
       "acceptance": "Clicking through every path leaves the extension card with no Errors button."
+    },
+    {
+      "id": "p2-review-prompt",
+      "title": "One-time Chrome Web Store review prompt after 3 successful exports",
+      "priority": "P2",
+      "status": "done",
+      "completed": "2026-09-01",
+      "blocks_submission": false,
+      "effort": "S",
+      "files": [
+        "src/core/review.ts",
+        "src/ui/review-toast.ts",
+        "src/viewer/main.ts",
+        "public/viewer/viewer.css"
+      ],
+      "detail": "chrome.storage.local keys pdfSaveCount and hasPromptedForReview. Counter increments only on a SUCCESSFUL export; at >= 3 with the flag falsy, a bottom-right toast appears after a 1.2s delay and the flag is set on display, so it shows once per installation.",
+      "implementation_note": "Three non-obvious things. (1) The toast must NOT reveal itself inside requestAnimationFrame — rAF is throttled and does not run in a backgrounded tab, which left it stuck at opacity 0 with its reveal class never applied. It now positions and reveals synchronously, forcing the style flush by reading offsetHeight. (2) Collision with the floating toolbar cannot be solved with a CSS breakpoint, because the toolbar is centred AND draggable; the toast measures the toolbar and lifts above it only when it would actually overlap. (3) The overlap measurement uses the LAYOUT box (offsetWidth/Height + computed insets), not getBoundingClientRect, because the entry transform skews a rect-based reading depending on which frame it lands in.",
+      "acceptance": "Prompt appears exactly once, on the third successful export, and never again after dismissal or reload."
     }
   ],
   "renamed_from": "pdf-annotator (directory name unchanged; product name is ScribblePDF as of 2026-08-31)",

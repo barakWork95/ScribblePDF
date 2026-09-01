@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "ScribblePDF",
   "short_name": "ScribblePDF",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Annotate and sign PDFs in your browser. Text, checkmarks, crosses and signatures — 100% local, nothing is uploaded.",
   "minimum_chrome_version": "116",
   "icons": {

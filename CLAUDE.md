@@ -139,6 +139,23 @@ is off. Note `file://` access **cannot be requested at runtime**;
 `host_permissions: ["file:///*"]` only makes the toggle available, and it is off
 by default and grants no site access.
 
+### The review prompt reveals itself synchronously
+`ui/review-toast.ts` deliberately does **not** use `requestAnimationFrame` to
+add its reveal class. rAF is throttled, and does not run at all in a
+backgrounded tab — which left the toast permanently at `opacity: 0` with the
+class never applied. It positions and reveals in the same tick, forcing the
+style flush the transition needs by reading `offsetHeight`.
+
+It also keeps clear of the floating toolbar by *measuring* it, not by a CSS
+breakpoint: the toolbar is centred **and** draggable, so whether they collide
+depends on where the user left it. The measurement uses the layout box
+(`offsetWidth`/`offsetHeight` plus computed insets) rather than
+`getBoundingClientRect`, because the entry transform skews a rect reading
+depending on which frame it lands in.
+
+Eligibility lives apart in `core/review.ts` (`pdfSaveCount`,
+`hasPromptedForReview`) so the rule is testable on its own.
+
 ### Keeping the extensions card free of errors
 `chrome://extensions` collects uncaught exceptions, unhandled promise rejections
 and `console.error` — but **not** `console.warn`. So every recoverable condition
@@ -195,6 +212,7 @@ src/
     text-style.ts     LINE_HEIGHT, MEASURED font metrics, CSS stacks (dependency-free)
     messages.ts       viewer <-> service worker message shapes
     handoff.ts        single-use IndexedDB handoff for local (file://) PDFs
+    review.ts         review-prompt eligibility + the store review URL
     bidi-layout.ts    UBA reordering + font-coverage run splitting (pure)
     store.ts          observable state, undo/redo, transient drag commits
     pdf-renderer.ts   pdf.js: lazy render, zoom, render-task lifecycle
@@ -204,6 +222,7 @@ src/
     toolbar.ts        floating toolbar, draggable, contextual style row
     annotation-layer.ts  placement, selection, drag, resize, text editing
     signature-modal.ts   drawing canvas, smoothing, ink-bbox trim, library
+    review-toast.ts      one-time store review prompt
     icons.ts          inline SVG
   viewer/main.ts      entry point: wiring, shortcuts, export, file input
   background/service-worker.ts  action click + opt-in DNR redirect

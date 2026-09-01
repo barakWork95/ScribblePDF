@@ -16,6 +16,8 @@ import { clamp } from '@/core/geometry';
 import { warmUpFontMetrics } from '@/core/text-style';
 import type { ExitEditorRequest, ExitEditorResponse } from '@/core/messages';
 import { takeHandoff } from '@/core/handoff';
+import { markReviewPrompted, recordPdfSaved, shouldPromptForReview } from '@/core/review';
+import { ReviewToast } from '@/ui/review-toast';
 
 /**
  * The exporter pulls in pdf-lib, fontkit and bidi-js — roughly two thirds of
@@ -49,6 +51,7 @@ const store = new Store();
 const renderer = new PdfRenderer();
 const layer = new AnnotationLayer(store);
 const signatureModal = new SignatureModal();
+const reviewToast = new ReviewToast();
 let sourceName = 'document.pdf';
 /** The document's own URL, when it came from one. Drives the exit button. */
 let sourceUrl: string | null = null;
@@ -60,7 +63,7 @@ const toolbar = new Toolbar(store, {
   onZoom: (d) => void setZoom(renderer.getZoom() + d),
 });
 
-document.body.append(toolbar.el, signatureModal.el);
+document.body.append(toolbar.el, signatureModal.el, reviewToast.el);
 
 // --------------------------------------------------------------- bootstrap
 
@@ -278,11 +281,39 @@ async function doExport(): Promise<void> {
     downloadBytes(bytes, sourceName.replace(/\.pdf$/i, '') + ' (annotated).pdf');
     store.markClean();
     setStatus(`Exported ${annotations.length} annotation${annotations.length === 1 ? '' : 's'}`);
+    // Only successful exports count, and never let this path break the export.
+    await recordPdfSaved().catch(() => undefined);
+    void maybePromptForReview();
   } catch (err) {
     console.error('[scribblepdf] export failed', err);
     setStatus(`Export failed: ${(err as Error).message}`, true);
   } finally {
     toolbar.setExporting(false);
+  }
+}
+
+// ----------------------------------------------------------------- review
+
+/** Let the download settle before anything else asks for attention. */
+const REVIEW_PROMPT_DELAY_MS = 1200;
+
+/** Guards against a second export scheduling the toast while one is pending. */
+let reviewPromptScheduled = false;
+
+async function maybePromptForReview(): Promise<void> {
+  if (reviewPromptScheduled || reviewToast.isVisible) return;
+  try {
+    if (!(await shouldPromptForReview())) return;
+    reviewPromptScheduled = true;
+    window.setTimeout(() => {
+      reviewToast.show();
+      // Set on display, so it is shown once per installation regardless of
+      // whether the user acts on it.
+      void markReviewPrompted().catch(() => undefined);
+    }, REVIEW_PROMPT_DELAY_MS);
+  } catch (err) {
+    // A review nudge is never worth surfacing an error for.
+    console.warn('[scribblepdf] review prompt check failed', err);
   }
 }
 
@@ -491,6 +522,8 @@ if (__DEV__) {
   (window as unknown as Record<string, unknown>).__paDev = {
     store,
     renderer,
+    reviewToast,
+    maybePromptForReview,
     /** IndexedDB handoff, for exercising the local-file path without a worker. */
     handoff: { take: takeHandoff, put: (r: never) => import('@/core/handoff').then((m) => m.putHandoff(r)) },
     /** Concatenated text layer of a page — proves text is real, not raster. */
