@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- viewport-fit=cover so the layout reaches under a phone's rounded
+         corners; user-scalable=no because pinch is handled by the app and
+         re-rasterises the PDF rather than scaling the whole UI. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#FF7F50" />
+    <meta name="description" content="Annotate and sign PDFs in your browser. 100% local — nothing is uploaded." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ScribblePDF" />
+    <title>ScribblePDF</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon128.png" />
+    <link rel="apple-touch-icon" href="icons/icon128.png" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="mobile.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="pa-topbar">
+        <span class="pa-brand"><span class="pa-brand__dot"></span>ScribblePDF</span>
+        <span id="doc-title" class="pa-topbar__title"></span>
+        <span class="pa-spacer"></span>
+        <span class="pa-badge" title="Everything happens on your device. Nothing is uploaded.">
+          Local only
+        </span>
+        <span id="status" class="pa-status"></span>
+        <button id="close-doc" class="pa-exit" type="button" hidden title="Close this document">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="2.1" stroke-linecap="round" aria-hidden="true">
+            <path d="M6.5 6.5 17.5 17.5" /><path d="M17.5 6.5 6.5 17.5" />
+          </svg>
+          <span>Close</span>
+        </button>
+      </header>
+
+      <main id="scroll" class="pa-scroll">
+        <div id="pages" class="pa-pages"></div>
+
+        <section id="empty" class="pa-empty" hidden>
+          <h1>Annotate a PDF</h1>
+          <p>
+            Add text, checkmarks, crosses and your signature — then download a real PDF.
+            Everything happens on your device.
+          </p>
+          <p class="pa-empty__note" data-note hidden></p>
+          <div class="pa-empty__actions">
+            <label class="pa-btn pa-btn--primary pa-btn--lg" for="file">Choose a PDF</label>
+          </div>
+          <p class="pa-hint">Nothing is uploaded. Works offline once installed.</p>
+        </section>
+      </main>
+
+      <input id="file" type="file" accept="application/pdf,.pdf" hidden />
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

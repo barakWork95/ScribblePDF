@@ -14,8 +14,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import type { Viewport } from './geometry';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('vendor/pdf.worker.mjs');
+import { assetUrl } from './platform';
 
 /** Guards against absurd canvas allocations at high zoom on HiDPI screens. */
 const MAX_CANVAS_SCALE = 3;
@@ -66,6 +65,9 @@ export class PdfRenderer {
   }
 
   async load(bytes: ArrayBuffer): Promise<void> {
+    // Set lazily rather than at module scope: the host installs its platform
+    // after importing core, so a top-level assetUrl() would run too early.
+    pdfjsLib.GlobalWorkerOptions.workerSrc = assetUrl('vendor/pdf.worker.mjs');
     // Opening a second document in the same tab must release the first, or its
     // worker and page caches leak for the lifetime of the tab.
     await this.destroy();
@@ -73,9 +75,9 @@ export class PdfRenderer {
     const task = pdfjsLib.getDocument({
       // Hand pdf.js its own copy; it will detach whatever it receives.
       data: new Uint8Array(bytes.slice(0)),
-      cMapUrl: chrome.runtime.getURL('vendor/cmaps/'),
+      cMapUrl: assetUrl('vendor/cmaps/'),
       cMapPacked: true,
-      standardFontDataUrl: chrome.runtime.getURL('vendor/standard_fonts/'),
+      standardFontDataUrl: assetUrl('vendor/standard_fonts/'),
       // Local-first: never let pdf.js reach out for anything.
       isEvalSupported: false,
 disableAutoFetch: false,

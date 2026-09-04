@@ -2,7 +2,7 @@
   "name": "scribblepdf",
   "version": "1.0.2",
   "private": true,
-  "description": "ScribblePDF — client-side Chrome MV3 extension for annotating and signing PDFs in-tab. Zero server, local-first.",
+  "description": "ScribblePDF \u2014 client-side Chrome MV3 extension for annotating and signing PDFs in-tab. Zero server, local-first.",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
@@ -13,7 +13,9 @@
     "test": "node scripts/test-bidi.mjs",
     "check": "npm run typecheck && npm test",
     "package": "node scripts/package.mjs",
-    "version": "node scripts/sync-version.mjs"
+    "version": "node scripts/sync-version.mjs",
+    "build:web": "node build.mjs --web",
+    "dev:web": "node build.mjs --web --dev"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

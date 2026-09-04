@@ -1,0 +1,75 @@
+# Build and publish the ScribblePDF web app to GitHub Pages.
+#
+#   /          the installable PWA
+#   /privacy   the privacy policy, rendered from docs/index.md
+#
+# Pages must be set to "GitHub Actions" as its source (Settings -> Pages ->
+# Build and deployment -> Source). The older "deploy from a branch" mode cannot
+# run the build this needs.
+#
+# The Chrome extension release is NOT built here — that stays a deliberate,
+# local `npm run package` so nothing reaches the Web Store automatically.
+name: Deploy web app to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let an in-flight deploy finish rather than cancelling it midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Same gate as local development: types plus the bidi/font-coverage suite.
+      - name: Type-check and test
+        run: npm run check
+
+      # Emits dist-web/ including privacy.html and privacy/index.html.
+      - name: Build web app and privacy policy
+        run: npm run build:web
+
+      - name: Verify the deploy artifact
+        run: |
+          set -e
+          for f in index.html main.js sw.js manifest.webmanifest privacy.html privacy/index.html; do
+            test -s "dist-web/$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+          if grep -qE '__[A-Z_]+__' dist-web/sw.js; then
+            echo "service worker has an unsubstituted placeholder"; exit 1
+          fi
+          echo "artifact OK ($(find dist-web -type f | wc -l | tr -d ' ') files)"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,7 +1,7 @@
 {
   "project": "scribblepdf",
   "description": "ScribblePDF — Chrome MV3 extension for client-side PDF annotation and signing. Local-first, zero server.",
-  "updated": "2026-09-01",
+  "updated": "2026-09-04",
   "phase": {
     "current": "phase-2-web-store-readiness",
     "status": "in progress — permissions, metrics, icons, packaging and store copy done; screenshots + publish outstanding",
@@ -41,7 +41,10 @@
     "Handoff records are single-use and short-lived. Never make them persistent — the PDF bytes must not outlive the load.",
     "The viewer must never fetch or navigate to a non-http(s) URL. openUrl() refuses other schemes; local files come only through the ?token= handoff.",
     "Worker listeners route through guard() and log recoverable conditions with console.warn — chrome://extensions collects console.error and unhandled rejections, not warnings. Do not use console.error for expected states.",
-    "UI that must appear should never gate its reveal on requestAnimationFrame — rAF does not run in a backgrounded tab."
+    "UI that must appear should never gate its reveal on requestAnimationFrame — rAF does not run in a backgrounded tab.",
+    "src/core must contain ZERO chrome.* references. Hosts install an adapter via setPlatform(); core imports no adapter, so the import direction enforces it.",
+    "The web service worker cache name embeds a hash of the precached CONTENT, not just the package version. Versioning by release number alone means any change shipped without a bump leaves installs serving stale assets from their own cache forever.",
+    "In mobile.css, .pa-strip--action must not inherit flex:1 from .pa-strip — it shares the class and would otherwise claim half the toolbar."
   ],
   "entrypoints": {
     "viewer": "src/viewer/main.ts",
@@ -66,6 +69,12 @@
     "check": "npm run check"
   },
   "open_issues": [
+    {
+      "id": "web-pwa-not-deployed",
+      "severity": "low",
+      "summary": "dist-web/ is built but not deployed. GitHub Pages currently serves docs/ (the privacy policy) from main.",
+      "fix": "Deploy dist-web/ via a Pages workflow or a gh-pages branch. Serving both the policy and the app from one Pages site needs a path decision (e.g. app at /app/)."
+    },
     {
       "id": "review-url-extension-id",
       "severity": "medium",
@@ -397,6 +406,26 @@
       "detail": "chrome.storage.local keys pdfSaveCount and hasPromptedForReview. Counter increments only on a SUCCESSFUL export; at >= 3 with the flag falsy, a bottom-right toast appears after a 1.2s delay and the flag is set on display, so it shows once per installation.",
       "implementation_note": "Three non-obvious things. (1) The toast must NOT reveal itself inside requestAnimationFrame — rAF is throttled and does not run in a backgrounded tab, which left it stuck at opacity 0 with its reveal class never applied. It now positions and reveals synchronously, forcing the style flush by reading offsetHeight. (2) Collision with the floating toolbar cannot be solved with a CSS breakpoint, because the toolbar is centred AND draggable; the toast measures the toolbar and lifts above it only when it would actually overlap. (3) The overlap measurement uses the LAYOUT box (offsetWidth/Height + computed insets), not getBoundingClientRect, because the entry transform skews a rect-based reading depending on which frame it lands in.",
       "acceptance": "Prompt appears exactly once, on the third successful export, and never again after dismissal or reload."
+    },
+    {
+      "id": "p3-web-pwa-target",
+      "title": "Responsive web / PWA build sharing core with the extension",
+      "priority": "P2",
+      "status": "done",
+      "completed": "2026-09-04",
+      "blocks_submission": false,
+      "effort": "L",
+      "files": [
+        "src/core/platform.ts",
+        "src/platform/extension.ts",
+        "src/platform/web.ts",
+        "src/web/main.ts",
+        "public/web/*",
+        "build.mjs"
+      ],
+      "detail": "Core was coupled to the host in exactly two ways: chrome.runtime.getURL for bundled assets and chrome.storage.local for prefs/signatures. Both are now behind core/platform.ts, so src/core has zero chrome.* references and runs unchanged in both hosts. src/ui was already chrome-free.",
+      "implementation_note": "Web storage is IndexedDB, not localStorage — signatures are PNG data URLs, too large for a 5MB synchronous store. assetUrl resolves against document.baseURI so the same build works from a domain root or a Pages project subpath. Pinch-zoom drives the renderer rather than the viewport, so the PDF re-rasterises crisply instead of the toolbar scaling with it. touch-action:none on .pa-ann and .pa-layer.is-placing is required or a finger drag scrolls the page instead of reaching the pointer handlers.",
+      "acceptance": "Both targets build; all tools reachable at 375px; PWA installable and offline-capable."
     }
   ],
   "renamed_from": "pdf-annotator (directory name unchanged; product name is ScribblePDF as of 2026-08-31)",
@@ -438,5 +467,11 @@
     "package_command": "npm run package -> releases/scribblepdf-<version>.zip",
     "current_package": "releases/scribblepdf-1.0.1.zip (2.54 MB, 200 files)",
     "version_note": "package.json is 1.0.1; build.mjs syncs the manifest. If you would rather submit the first listing as 1.0.0, set it back and re-run npm run package."
+  },
+  "targets": {
+    "extension": "npm run build → dist/ (Chrome MV3). npm run package → releases/*.zip",
+    "web_pwa": "npm run build:web → dist-web/ (installable PWA, GitHub Pages ready)",
+    "shared": "src/core (host-agnostic) + src/ui (DOM only, no chrome.*)",
+    "note": "The two targets share core and UI verbatim; only src/platform/* and the entry points differ. releases/ is never touched by the web build."
   }
 }

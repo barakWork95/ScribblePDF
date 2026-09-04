@@ -23,6 +23,7 @@ import { GLYPHS, along, basisOf, hexToRgb01, toPdfPoint } from './geometry';
 import { layoutLine } from './bidi-layout';
 import type { CharClass } from './bidi-layout';
 import { LINE_HEIGHT, baselineRatio, cssFamily, cssFontShorthand } from './text-style';
+import { assetUrl } from './platform';
 
 const STANDARD_FONTS: Record<FontFamilyId, Record<string, StandardFonts>> = {
   helvetica: {
@@ -71,8 +72,8 @@ function hebrewFontBytes(bold: boolean): Promise<Uint8Array> {
   const key = bold ? 'bold' : 'regular';
   let pending = fontBytesCache.get(key);
   if (!pending) {
-    // Packaged inside the extension — this is not a network request.
-    pending = fetch(chrome.runtime.getURL(HEBREW_FONT_URLS[key]))
+    // A packaged asset, resolved by the host; not a third-party request.
+    pending = fetch(assetUrl(HEBREW_FONT_URLS[key]))
       .then((res) => {
         if (!res.ok) throw new Error(`font ${key}: HTTP ${res.status}`);
         return res.arrayBuffer();

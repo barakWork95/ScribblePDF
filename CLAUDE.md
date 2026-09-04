@@ -47,7 +47,24 @@ exit flows are only proven end to end once loaded unpacked.
 
 ---
 
-## 2. Architecture decisions (and why)
+## 2. Two hosts, one core
+
+ScribblePDF builds for two targets from the same source:
+
+| Target | Command | Output |
+|---|---|---|
+| Chrome MV3 extension | `npm run build` | `dist/` (then `npm run package` → `releases/`) |
+| Web / installable PWA | `npm run build:web` | `dist-web/` |
+
+`src/core` is host-agnostic and `src/ui` is DOM-only; both run unchanged in
+either host. Core was coupled to Chrome in exactly two ways — asset URLs and
+key-value storage — and both now sit behind `core/platform.ts`. A host installs
+its adapter with `setPlatform()` before touching core.
+
+**Core imports no adapter.** The import direction is what enforces the rule, so
+a `chrome.*` reference cannot drift back in; `src/core` must stay at zero.
+
+## 3. Architecture decisions (and why)
 
 ### Normalized view space is the single coordinate system
 Annotations store `x`/`y` as fractions (0..1) of the rendered page box, with the
@@ -190,7 +207,7 @@ the site's origin has been granted. The default path is the toolbar button.
 
 ---
 
-## 3. File map
+## 4. File map
 
 ```
 manifest.json            MV3 manifest (CSP, permissions, web-accessible viewer)
@@ -224,16 +241,21 @@ src/
     signature-modal.ts   drawing canvas, smoothing, ink-bbox trim, library
     review-toast.ts      one-time store review prompt
     icons.ts          inline SVG
-  viewer/main.ts      entry point: wiring, shortcuts, export, file input
+  platform/
+    extension.ts      chrome.runtime.getURL + chrome.storage.local
+    web.ts            baseURI-relative assets + IndexedDB
+  viewer/main.ts      EXTENSION entry: wiring, shortcuts, export, file input
+  web/main.ts         WEB entry: touch, pinch zoom, service worker registration
   background/service-worker.ts  action click + opt-in DNR redirect
 
-public/viewer/        viewer.html + viewer.css
+public/viewer/        viewer.html + viewer.css (shared stylesheet)
+public/web/           index.html, mobile.css, manifest.webmanifest, sw.js
 dev/shim.js           chrome.* shim for the harness (permissions, storage, runtime)
                       the harness HTML is GENERATED from viewer.html at dev build
                       time — do not hand-write a second copy, it goes stale
 ```
 
-## 4. State design
+## 5. State design
 
 `Store` (`src/core/store.ts`) holds one `State`:
 
@@ -248,7 +270,7 @@ dev/shim.js           chrome.* shim for the harness (permissions, storage, runti
 Subscribers get the whole state and diff what they need. The annotation layer
 diffs DOM nodes **by id** — a full rebuild would destroy the caret mid-typing.
 
-## 5. Build and run
+## 6. Build and run
 
 ```bash
 npm install
@@ -257,6 +279,7 @@ npm run dev          # watch mode
 npm run typecheck
 npm test             # bidi + font-coverage regression suite
 npm run check        # typecheck + test
+npm run build:web    # → dist-web/  (web + PWA target)
 npm run icons        # regenerate PNG icons from assets/*.svg
 npm run package      # store-ready zip in releases/ (refuses on dev artefacts)
 ```
@@ -276,11 +299,21 @@ node build.mjs --dev
 node scripts/serve.mjs 5273
 # → http://localhost:5273/viewer/harness.html?file=/dev/sample.pdf
 ```
+
+**Web/PWA locally** (localhost is a secure context, so the service worker
+behaves exactly as it will on Pages):
+```bash
+npm run build:web
+node scripts/serve-web.mjs 5274   # → http://localhost:5274/
+```
+When iterating, remember the service worker will serve its own cache: the cache
+name embeds a content hash so a rebuild busts it, but an *unchanged* rebuild
+will legitimately keep serving the old bytes.
 `__DEV__` gates a `window.__paDev` hook (`store`, `renderer`, `exportBase64()`,
 `exportAndReload()`). It is dead-code-eliminated from production — verify with
 `grep -c __paDev dist/viewer/main.js` → `0`.
 
-## 6. Known limitations / traps
+## 7. Known limitations / traps
 
 1. **Script coverage is tiered.** Latin-1 uses the standard PDF fonts; Hebrew
    uses embedded, subsetted Noto Sans Hebrew (real selectable text). Anything
@@ -351,7 +384,7 @@ node scripts/serve.mjs 5273
    documents with non-embedded fonts. JavaScript is already split: 363 KB
    initial, 1.3 MB exporter chunk on demand. Phase 2 could trim the cmaps.
 
-## 7. Toolbar design
+## 8. Toolbar design
 
 The primary row follows the supplied design reference: a single framed slab of
 tiles, each a bold glyph over a caption, divided by light hairlines. Glyph
@@ -366,7 +399,7 @@ zoom, open) and the contextual style controls sit on a quieter second row.
 
 Tiles are toggles — clicking the active tool returns to Select.
 
-## 8. Icon artwork
+## 9. Icon artwork
 
 `assets/icon.svg` and `assets/icon-small.svg` are the source of truth;
 `npm run icons` rasterises them into `public/icons/` with `@resvg/resvg-js`
@@ -386,7 +419,7 @@ reverts it.
 **Trap:** a `--` sequence inside an XML comment makes an SVG fail to parse, and
 the failure is silent in an `<img>` tag. `make-icons.mjs` asserts against it.
 
-## 9. Verification performed
+## 10. Verification performed
 
 Driven through the dev harness in a real browser:
 

@@ -18,16 +18,18 @@ what they open with it.
 
 ## What stays on your device
 
-Two things are saved in your browser's local extension storage, on your own
-computer:
+ScribblePDF is available both as a Chrome extension and as a web app you can
+install to your home screen. Either way, two things are saved locally on your
+own device:
 
 1. **Your preferences** — the tool, color, font and size you last used.
 2. **Signatures you chose to save** — the drawing itself, so you can reuse it
    instead of redrawing it for every document.
 
-Both are stored using Chrome's `storage.local` API. They are never transmitted
-anywhere, are not synced between your devices, and are deleted when you remove
-the extension. You can delete saved signatures individually from the signature
+Both are stored by the browser on your device — in extension storage
+(`chrome.storage.local`) under the extension, and in IndexedDB in the web app.
+They are never transmitted anywhere, are not synced between your devices, and
+are deleted when you remove the extension or clear the site's data. You can delete saved signatures individually from the signature
 dialog at any time.
 
 **Your PDF files are never stored.** A document lives in the tab's memory only
@@ -35,9 +37,12 @@ while you are working on it, and is gone when you close or navigate away.
 
 ## Network access
 
-ScribblePDF makes exactly one kind of network request: downloading the PDF you
-asked it to open, from the site you opened it from. That request goes to that
-site and nowhere else.
+In the extension, ScribblePDF makes exactly one kind of network request:
+downloading the PDF you asked it to open, from the site you opened it from. That
+request goes to that site and nowhere else.
+
+The web app makes none at all beyond loading itself. You choose a file from your
+own device, and once installed it works completely offline.
 
 There are no other requests. No content delivery networks, no remote fonts, no
 remote code, no "phone home" check. Every script, font and asset the extension
@@ -47,6 +52,9 @@ policy — the browser will refuse to load remote code even if the extension ask
 for it.
 
 ## Permissions, and why each exists
+
+These apply to the **browser extension**. The web app requests no permissions at
+all — it only reads the file you hand it.
 
 ScribblePDF requests **no access to any website when you install it.**
 

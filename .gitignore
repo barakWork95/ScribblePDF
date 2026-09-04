@@ -1,8 +1,9 @@
 # Dependencies
 node_modules/
 
-# Build output — regenerate with `npm run build`
+# Build output — regenerate with `npm run build` / `npm run build:web`
 dist/
+dist-web/
 
 # Store packages — regenerate with `npm run package`
 releases/

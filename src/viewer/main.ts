@@ -6,6 +6,8 @@
  * no analytics, no remote fonts, no CDN. Enforced by the CSP in manifest.json
  * (`script-src 'self'`) and by there being no fetch/XHR anywhere else.
  */
+import { setPlatform } from '@/core/platform';
+import { extensionPlatform } from '@/platform/extension';
 import { PdfRenderer } from '@/core/pdf-renderer';
 import { Store } from '@/core/store';
 import { Toolbar } from '@/ui/toolbar';
@@ -46,6 +48,9 @@ const els = {
   emptyTitle: document.getElementById('empty-title') as HTMLHeadingElement,
   emptyBody: document.getElementById('empty-body') as HTMLParagraphElement,
 };
+
+// Must precede any core call that resolves an asset or touches storage.
+setPlatform(extensionPlatform);
 
 const store = new Store();
 const renderer = new PdfRenderer();
